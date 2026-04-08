@@ -50,13 +50,12 @@ class FF1:
     def _expand_s(self, r: bytes, d: int) -> bytes:
         blocks = (d + 15) // 16
         out = bytearray(r)
-        prev = r
         for j in range(1, blocks):
             x = j.to_bytes(16, "big")
-            x = bytes(a ^ b for a, b in zip(x, prev))
+            # XOR with R (not previous block) per NIST SP 800-38G
+            x = bytes(a ^ b for a, b in zip(x, r))
             enc = self._aes_ecb(x)
             out.extend(enc)
-            prev = enc
         return bytes(out[:d])
 
     def _num(self, digits: list[int]) -> int:
