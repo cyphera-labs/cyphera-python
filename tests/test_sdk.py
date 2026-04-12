@@ -93,3 +93,75 @@ def test_unicode_passthroughs():
     protected = c.protect("José123456", "ssn")
     accessed = c.access(protected)
     assert accessed == "José123456"
+
+
+def test_key_source_env(monkeypatch):
+    monkeypatch.setenv("TEST_CYPHERA_KEY", "2B7E151628AED2A6ABF7158809CF4F3C")
+    c = Cyphera({
+        "policies": {"ssn": {"engine": "ff1", "key_ref": "k", "tag": "T01"}},
+        "keys": {"k": {"source": "env", "var": "TEST_CYPHERA_KEY"}},
+    })
+    p = c.protect("123456789", "ssn")
+    assert p.startswith("T01")
+    assert c.access(p) == "123456789"
+
+
+def test_key_source_env_base64(monkeypatch):
+    import base64
+    key_b64 = base64.b64encode(bytes.fromhex("2B7E151628AED2A6ABF7158809CF4F3C")).decode()
+    monkeypatch.setenv("TEST_CYPHERA_KEY_B64", key_b64)
+    c = Cyphera({
+        "policies": {"ssn": {"engine": "ff1", "key_ref": "k", "tag": "T01"}},
+        "keys": {"k": {"source": "env", "var": "TEST_CYPHERA_KEY_B64", "encoding": "base64"}},
+    })
+    p = c.protect("123456789", "ssn")
+    assert p.startswith("T01")
+    assert c.access(p) == "123456789"
+
+
+def test_key_source_env_missing_raises():
+    with pytest.raises(ValueError, match="not set"):
+        Cyphera({
+            "policies": {"ssn": {"engine": "ff1", "key_ref": "k", "tag": "T01"}},
+            "keys": {"k": {"source": "env", "var": "NONEXISTENT_CYPHERA_KEY_9999"}},
+        })
+
+
+def test_key_source_file(tmp_path):
+    key_file = tmp_path / "key.hex"
+    key_file.write_text("2B7E151628AED2A6ABF7158809CF4F3C")
+    c = Cyphera({
+        "policies": {"ssn": {"engine": "ff1", "key_ref": "k", "tag": "T01"}},
+        "keys": {"k": {"source": "file", "path": str(key_file)}},
+    })
+    p = c.protect("123456789", "ssn")
+    assert p.startswith("T01")
+    assert c.access(p) == "123456789"
+
+
+def test_key_source_cloud_without_keychain_raises():
+    with pytest.raises(ImportError, match="cyphera-keychain"):
+        Cyphera({
+            "policies": {"ssn": {"engine": "ff1", "key_ref": "k", "tag": "T01"}},
+            "keys": {"k": {"source": "aws-kms", "arn": "arn:aws:kms:us-east-1:123:key/abc"}},
+        })
+
+
+def test_key_source_unknown_raises():
+    with pytest.raises(ValueError, match="unknown source"):
+        Cyphera({
+            "policies": {"ssn": {"engine": "ff1", "key_ref": "k", "tag": "T01"}},
+            "keys": {"k": {"source": "magic"}},
+        })
+
+
+def test_key_source_env_matches_inline(monkeypatch):
+    monkeypatch.setenv("TEST_CYPHERA_KEY2", "2B7E151628AED2A6ABF7158809CF4F3C")
+    c_inline = Cyphera(CONFIG)
+    c_env = Cyphera({
+        "policies": CONFIG["policies"],
+        "keys": {"test-key": {"source": "env", "var": "TEST_CYPHERA_KEY2"}},
+    })
+    p1 = c_inline.protect("123456789", "ssn")
+    p2 = c_env.protect("123456789", "ssn")
+    assert p1 == p2, "env source should produce identical output to inline material"

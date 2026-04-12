@@ -16,6 +16,59 @@ ALPHABETS = {
 }
 
 
+_CLOUD_SOURCES = ("aws-kms", "gcp-kms", "azure-kv", "vault")
+
+_keychain = None
+
+
+def _resolve_key_source(name: str, config: dict) -> bytes:
+    source = config["source"]
+
+    if source == "env":
+        var_name = config.get("var")
+        if not var_name:
+            raise ValueError(f"Key '{name}': source 'env' requires 'var' field")
+        val = os.environ.get(var_name)
+        if not val:
+            raise ValueError(f"Key '{name}': environment variable '{var_name}' is not set")
+        encoding = config.get("encoding", "hex")
+        if encoding == "base64":
+            import base64
+            return base64.b64decode(val)
+        return bytes.fromhex(val)
+
+    if source == "file":
+        file_path = config.get("path")
+        if not file_path:
+            raise ValueError(f"Key '{name}': source 'file' requires 'path' field")
+        with open(file_path) as f:
+            raw = f.read().strip()
+        encoding = config.get("encoding")
+        if not encoding:
+            encoding = "base64" if file_path.endswith((".b64", ".base64")) else "hex"
+        if encoding == "base64":
+            import base64
+            return base64.b64decode(raw)
+        return bytes.fromhex(raw)
+
+    if source in _CLOUD_SOURCES:
+        global _keychain
+        if _keychain is None:
+            try:
+                import cyphera_keychain
+                _keychain = cyphera_keychain
+            except ImportError:
+                _keychain = False
+        if not _keychain:
+            raise ImportError(
+                f"Key '{name}' requires source '{source}' but cyphera-keychain is not installed.\n"
+                f"Install it: pip install cyphera-keychain[{source.replace('-', '_')}]"
+            )
+        return _keychain.resolve(source, config)
+
+    raise ValueError(f"Key '{name}': unknown source '{source}'. Valid sources: env, file, {', '.join(_CLOUD_SOURCES)}")
+
+
 class Cyphera:
     def __init__(self, config: dict):
         self._policies = {}
@@ -24,8 +77,17 @@ class Cyphera:
 
         # Load keys
         for name, val in config.get("keys", {}).items():
-            material = val if isinstance(val, str) else val.get("material", "")
-            self._keys[name] = bytes.fromhex(material)
+            if isinstance(val, str):
+                # Shorthand: bare hex string
+                self._keys[name] = bytes.fromhex(val)
+            elif "material" in val:
+                # Inline hex material
+                self._keys[name] = bytes.fromhex(val["material"])
+            elif "source" in val:
+                # Resolve from source
+                self._keys[name] = _resolve_key_source(name, val)
+            else:
+                raise ValueError(f"Key '{name}' must have either 'material' or 'source'")
 
         # Load policies + build tag index
         for name, pol in config.get("policies", {}).items():
