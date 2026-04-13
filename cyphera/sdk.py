@@ -148,7 +148,7 @@ class Cyphera:
     def access(self, protected_value: str, policy_name: str = None) -> str:
         if policy_name:
             policy = self._get_policy(policy_name)
-            return self._access_fpe(protected_value, policy)
+            return self._access_fpe(protected_value, policy, explicit_policy=True)
 
         # Tag-based lookup — longest tags first
         for tag in sorted(self._tag_index.keys(), key=len, reverse=True):
@@ -185,16 +185,16 @@ class Cyphera:
             return policy["tag"] + result
         return result
 
-    def _access_fpe(self, protected_value: str, policy: dict) -> str:
+    def _access_fpe(self, protected_value: str, policy: dict, explicit_policy: bool = False) -> str:
         if policy["engine"] not in ("ff1", "ff3"):
             raise ValueError(f"Cannot reverse '{policy['engine']}' — not reversible")
 
         key = self._resolve_key(policy["key_ref"])
         alphabet = policy["alphabet"]
 
-        # Strip tag
+        # Strip tag (only when auto-detected, not when policy explicitly provided)
         without_tag = protected_value
-        if policy["tag_enabled"] and policy["tag"]:
+        if not explicit_policy and policy["tag_enabled"] and policy["tag"]:
             without_tag = protected_value[len(policy["tag"]):]
 
         # Strip passthroughs
