@@ -38,6 +38,8 @@ class FF3:
         return "".join(self._alphabet[i] for i in d)
 
     def _aes_ecb(self, block: bytes) -> bytes:
+        # NIST SP 800-38G requires AES-ECB as the PRF for FF1/FF3 Feistel rounds.
+        # This is single-block encryption used as a building block, not ECB mode applied to user data.
         cipher = Cipher(algorithms.AES(self._key), modes.ECB())
         enc = cipher.encryptor()
         return enc.update(block) + enc.finalize()
