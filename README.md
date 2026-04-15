@@ -1,6 +1,7 @@
 # cyphera
 
 [![CI](https://github.com/cyphera-labs/cyphera-python/actions/workflows/ci.yml/badge.svg)](https://github.com/cyphera-labs/cyphera-python/actions/workflows/ci.yml)
+[![Security](https://github.com/cyphera-labs/cyphera-python/actions/workflows/codeql.yml/badge.svg)](https://github.com/cyphera-labs/cyphera-python/actions/workflows/codeql.yml)
 [![PyPI](https://img.shields.io/pypi/v/cyphera)](https://pypi.org/project/cyphera/)
 [![Python](https://img.shields.io/pypi/pyversions/cyphera)](https://pypi.org/project/cyphera/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
