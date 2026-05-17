@@ -17,7 +17,7 @@ pip install cyphera
 ```python
 from cyphera import Cyphera
 
-# Auto-discover: checks CYPHERA_POLICY_FILE env, ./cyphera.json, /etc/cyphera/cyphera.json
+# Auto-discover: checks CYPHERA_CONFIG_FILE env, ./cyphera.json, /etc/cyphera/cyphera.json
 c = Cyphera.load()
 
 # Or load from a specific file
@@ -25,8 +25,8 @@ c = Cyphera.from_file("./config/cyphera.json")
 
 # Or inline config
 c = Cyphera({
-    "policies": {
-        "ssn": {"engine": "ff1", "key_ref": "my-key", "tag": "T01"},
+    "configurations": {
+        "ssn": {"engine": "ff1", "key_ref": "my-key", "header": "T01"},
     },
     "keys": {
         "my-key": {"material": "2B7E151628AED2A6ABF7158809CF4F3C"},
@@ -35,20 +35,20 @@ c = Cyphera({
 
 # Protect
 encrypted = c.protect("123-45-6789", "ssn")
-# → "T01i6J-xF-07pX" (tagged, dashes preserved)
+# → "T01i6J-xF-07pX" (DPH-prefixed, dashes preserved)
 
-# Access (tag-based, no policy name needed)
+# Access (header-based, no configuration name needed)
 decrypted = c.access(encrypted)
 # → "123-45-6789"
 ```
 
-## Policy File (cyphera.json)
+## Configuration File (cyphera.json)
 
 ```json
 {
-  "policies": {
-    "ssn": { "engine": "ff1", "key_ref": "my-key", "tag": "T01" },
-    "ssn_mask": { "engine": "mask", "pattern": "last4", "tag_enabled": false }
+  "configurations": {
+    "ssn": { "engine": "ff1", "key_ref": "my-key", "header": "T01" },
+    "ssn_mask": { "engine": "mask", "pattern": "last4", "header_enabled": false }
   },
   "keys": {
     "my-key": { "material": "2B7E151628AED2A6ABF7158809CF4F3C" }
@@ -56,9 +56,13 @@ decrypted = c.access(encrypted)
 }
 ```
 
+The `header` (Data Protection Header, DPH) is a short prefix prepended to
+protected output that identifies the configuration used. It lets `access()`
+reverse a value without the caller naming the configuration.
+
 ## Cross-Language Compatible
 
-All six SDKs produce identical output for the same inputs:
+All SDKs produce identical output for the same inputs:
 
 ```
 Input:       123-45-6789

@@ -1,4 +1,4 @@
-"""Cyphera SDK — protect/access API with policy-driven encryption."""
+"""Cyphera SDK — protect/access API with configuration-driven encryption."""
 
 import json
 import os
@@ -71,8 +71,8 @@ def _resolve_key_source(name: str, config: dict) -> bytes:
 
 class Cyphera:
     def __init__(self, config: dict):
-        self._policies = {}
-        self._tag_index = {}
+        self._configurations = {}
+        self._header_index = {}
         self._keys = {}
 
         # Load keys
@@ -89,80 +89,80 @@ class Cyphera:
             else:
                 raise ValueError(f"Key '{name}' must have either 'material' or 'source'")
 
-        # Load policies + build tag index
-        for name, pol in config.get("policies", {}).items():
-            tag_enabled = pol.get("tag_enabled", True)
-            tag = pol.get("tag")
+        # Load configurations + build header index
+        for name, cfg in config.get("configurations", {}).items():
+            header_enabled = cfg.get("header_enabled", True)
+            header = cfg.get("header")
 
-            if tag_enabled and not tag:
-                raise ValueError(f"Policy '{name}' has tag_enabled=true but no tag specified")
+            if header_enabled and not header:
+                raise ValueError(f"Configuration '{name}' has header_enabled=true but no header specified")
 
-            if tag_enabled and tag:
-                if tag in self._tag_index:
-                    raise ValueError(f"Tag collision: '{tag}' used by both '{self._tag_index[tag]}' and '{name}'")
-                self._tag_index[tag] = name
+            if header_enabled and header:
+                if header in self._header_index:
+                    raise ValueError(f"Header collision: '{header}' used by both '{self._header_index[header]}' and '{name}'")
+                self._header_index[header] = name
 
-            self._policies[name] = {
-                "engine": pol.get("engine", "ff1"),
-                "alphabet": ALPHABETS.get(pol.get("alphabet"), pol.get("alphabet") or ALPHABETS["alphanumeric"]),
-                "key_ref": pol.get("key_ref"),
-                "tag": tag,
-                "tag_enabled": tag_enabled,
-                "tag_length": pol.get("tag_length", 3),
-                "pattern": pol.get("pattern"),
-                "algorithm": pol.get("algorithm", "sha256"),
+            self._configurations[name] = {
+                "engine": cfg.get("engine", "ff1"),
+                "alphabet": ALPHABETS.get(cfg.get("alphabet"), cfg.get("alphabet") or ALPHABETS["alphanumeric"]),
+                "key_ref": cfg.get("key_ref"),
+                "header": header,
+                "header_enabled": header_enabled,
+                "header_length": cfg.get("header_length", 3),
+                "pattern": cfg.get("pattern"),
+                "algorithm": cfg.get("algorithm", "sha256"),
             }
 
     @classmethod
     def load(cls):
-        """Auto-discover policy: CYPHERA_POLICY_FILE env, ./cyphera.json, /etc/cyphera/cyphera.json"""
-        env_path = os.environ.get("CYPHERA_POLICY_FILE")
+        """Auto-discover configuration: CYPHERA_CONFIG_FILE env, ./cyphera.json, /etc/cyphera/cyphera.json"""
+        env_path = os.environ.get("CYPHERA_CONFIG_FILE")
         if env_path and os.path.exists(env_path):
             return cls.from_file(env_path)
         if os.path.exists("cyphera.json"):
             return cls.from_file("cyphera.json")
         if os.path.exists("/etc/cyphera/cyphera.json"):
             return cls.from_file("/etc/cyphera/cyphera.json")
-        raise FileNotFoundError("No policy file found. Checked: CYPHERA_POLICY_FILE env, ./cyphera.json, /etc/cyphera/cyphera.json")
+        raise FileNotFoundError("No configuration file found. Checked: CYPHERA_CONFIG_FILE env, ./cyphera.json, /etc/cyphera/cyphera.json")
 
     @classmethod
     def from_file(cls, path: str):
-        """Load from a JSON policy file."""
+        """Load from a JSON configuration file."""
         with open(path) as f:
             config = json.load(f)
         return cls(config)
 
-    def protect(self, value: str, policy_name: str) -> str:
-        policy = self._get_policy(policy_name)
-        engine = policy["engine"]
+    def protect(self, value: str, configuration_name: str) -> str:
+        configuration = self._get_configuration(configuration_name)
+        engine = configuration["engine"]
 
         if engine in ("ff1", "ff3"):
-            return self._protect_fpe(value, policy, engine == "ff3")
+            return self._protect_fpe(value, configuration, engine == "ff3")
         elif engine == "mask":
-            return self._protect_mask(value, policy)
+            return self._protect_mask(value, configuration)
         elif engine == "hash":
-            return self._protect_hash(value, policy)
+            return self._protect_hash(value, configuration)
         else:
             raise ValueError(f"Unknown engine: {engine}")
 
-    def access(self, protected_value: str, policy_name: str = None) -> str:
-        if policy_name:
-            policy = self._get_policy(policy_name)
-            return self._access_fpe(protected_value, policy, explicit_policy=True)
+    def access(self, protected_value: str, configuration_name: str = None) -> str:
+        if configuration_name:
+            configuration = self._get_configuration(configuration_name)
+            return self._access_fpe(protected_value, configuration, explicit_configuration=True)
 
-        # Tag-based lookup — longest tags first
-        for tag in sorted(self._tag_index.keys(), key=len, reverse=True):
-            if protected_value.startswith(tag):
-                policy = self._get_policy(self._tag_index[tag])
-                return self._access_fpe(protected_value, policy)
+        # Header-based lookup — longest headers first
+        for header in sorted(self._header_index.keys(), key=len, reverse=True):
+            if protected_value.startswith(header):
+                configuration = self._get_configuration(self._header_index[header])
+                return self._access_fpe(protected_value, configuration)
 
-        raise ValueError("No matching tag found. Use access(value, policy_name) for untagged values.")
+        raise ValueError("No matching header found. Use access(value, configuration_name) for headerless values.")
 
     # ── FPE ──
 
-    def _protect_fpe(self, value: str, policy: dict, is_ff3: bool) -> str:
-        key = self._resolve_key(policy["key_ref"])
-        alphabet = policy["alphabet"]
+    def _protect_fpe(self, value: str, configuration: dict, is_ff3: bool) -> str:
+        key = self._resolve_key(configuration["key_ref"])
+        alphabet = configuration["alphabet"]
 
         # Strip passthroughs
         encryptable, positions, chars = self._extract_passthroughs(value, alphabet)
@@ -180,28 +180,28 @@ class Cyphera:
         # Reinsert passthroughs
         result = self._reinsert_passthroughs(encrypted, positions, chars)
 
-        # Prepend tag
-        if policy["tag_enabled"] and policy["tag"]:
-            return policy["tag"] + result
+        # Prepend header
+        if configuration["header_enabled"] and configuration["header"]:
+            return configuration["header"] + result
         return result
 
-    def _access_fpe(self, protected_value: str, policy: dict, explicit_policy: bool = False) -> str:
-        if policy["engine"] not in ("ff1", "ff3"):
-            raise ValueError(f"Cannot reverse '{policy['engine']}' — not reversible")
+    def _access_fpe(self, protected_value: str, configuration: dict, explicit_configuration: bool = False) -> str:
+        if configuration["engine"] not in ("ff1", "ff3"):
+            raise ValueError(f"Cannot reverse '{configuration['engine']}' — not reversible")
 
-        key = self._resolve_key(policy["key_ref"])
-        alphabet = policy["alphabet"]
+        key = self._resolve_key(configuration["key_ref"])
+        alphabet = configuration["alphabet"]
 
-        # Strip tag (only when auto-detected, not when policy explicitly provided)
-        without_tag = protected_value
-        if not explicit_policy and policy["tag_enabled"] and policy["tag"]:
-            without_tag = protected_value[len(policy["tag"]):]
+        # Strip header (only when auto-detected, not when configuration explicitly provided)
+        without_header = protected_value
+        if not explicit_configuration and configuration["header_enabled"] and configuration["header"]:
+            without_header = protected_value[len(configuration["header"]):]
 
         # Strip passthroughs
-        encryptable, positions, chars = self._extract_passthroughs(without_tag, alphabet)
+        encryptable, positions, chars = self._extract_passthroughs(without_header, alphabet)
 
         # Decrypt
-        if policy["engine"] == "ff3":
+        if configuration["engine"] == "ff3":
             cipher = FF3(key, b"\x00" * 8, alphabet)
         else:
             cipher = FF1(key, b"", alphabet)
@@ -212,10 +212,10 @@ class Cyphera:
 
     # ── Mask ──
 
-    def _protect_mask(self, value: str, policy: dict) -> str:
-        pattern = policy["pattern"]
+    def _protect_mask(self, value: str, configuration: dict) -> str:
+        pattern = configuration["pattern"]
         if not pattern:
-            raise ValueError("Mask policy requires 'pattern'")
+            raise ValueError("Mask configuration requires 'pattern'")
         length = len(value)
         if pattern in ("last4", "last_4"):
             return "*" * max(0, length - 4) + value[-4:]
@@ -230,32 +230,32 @@ class Cyphera:
 
     # ── Hash ──
 
-    def _protect_hash(self, value: str, policy: dict) -> str:
-        algo = policy["algorithm"].replace("-", "").lower()
+    def _protect_hash(self, value: str, configuration: dict) -> str:
+        algo = configuration["algorithm"].replace("-", "").lower()
         algo_map = {"sha256": "sha256", "sha384": "sha384", "sha512": "sha512"}
         hash_algo = algo_map.get(algo)
         if not hash_algo:
-            raise ValueError(f"Unsupported hash algorithm: {policy['algorithm']}")
+            raise ValueError(f"Unsupported hash algorithm: {configuration['algorithm']}")
 
         data = value.encode("utf-8")
 
-        if policy["key_ref"]:
-            key = self._resolve_key(policy["key_ref"])
+        if configuration["key_ref"]:
+            key = self._resolve_key(configuration["key_ref"])
             return hmac.new(key, data, hash_algo).hexdigest()
         else:
             return hashlib.new(hash_algo, data).hexdigest()
 
     # ── Helpers ──
 
-    def _get_policy(self, name: str) -> dict:
-        policy = self._policies.get(name)
-        if not policy:
-            raise ValueError(f"Unknown policy: {name}")
-        return policy
+    def _get_configuration(self, name: str) -> dict:
+        configuration = self._configurations.get(name)
+        if not configuration:
+            raise ValueError(f"Unknown configuration: {name}")
+        return configuration
 
     def _resolve_key(self, key_ref: str) -> bytes:
         if not key_ref:
-            raise ValueError("No key_ref in policy")
+            raise ValueError("No key_ref in configuration")
         key = self._keys.get(key_ref)
         if not key:
             raise ValueError(f"Unknown key: {key_ref}")
