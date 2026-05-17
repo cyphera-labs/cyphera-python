@@ -148,13 +148,20 @@ class Cyphera:
     def access(self, protected_value: str, configuration_name: str = None) -> str:
         if configuration_name:
             configuration = self._get_configuration(configuration_name)
-            return self._access_fpe(protected_value, configuration, explicit_configuration=True)
+            if configuration["header_enabled"]:
+                raise ValueError(
+                    f"configuration '{configuration_name}' has header_enabled=True; "
+                    "use access(value) — the header identifies the configuration. "
+                    "The two-arg form is for header_enabled=False configurations only."
+                )
+            return self._access_fpe(protected_value, configuration)
 
         # Header-based lookup — longest headers first
         for header in sorted(self._header_index.keys(), key=len, reverse=True):
             if protected_value.startswith(header):
                 configuration = self._get_configuration(self._header_index[header])
-                return self._access_fpe(protected_value, configuration)
+                # Strip the header before delegating; _access_fpe always assumes raw input.
+                return self._access_fpe(protected_value[len(header):], configuration)
 
         raise ValueError("No matching header found. Use access(value, configuration_name) for headerless values.")
 
@@ -185,20 +192,20 @@ class Cyphera:
             return configuration["header"] + result
         return result
 
-    def _access_fpe(self, protected_value: str, configuration: dict, explicit_configuration: bool = False) -> str:
+    def _access_fpe(self, protected_value: str, configuration: dict) -> str:
+        """Internal: decrypt assuming `protected_value` is already header-stripped.
+
+        Used by `access(value)` (which strips the header itself) and by
+        `access(value, name)` (only valid for header_enabled=False configs).
+        """
         if configuration["engine"] not in ("ff1", "ff3"):
             raise ValueError(f"Cannot reverse '{configuration['engine']}' — not reversible")
 
         key = self._resolve_key(configuration["key_ref"])
         alphabet = configuration["alphabet"]
 
-        # Strip header (only when auto-detected, not when configuration explicitly provided)
-        without_header = protected_value
-        if not explicit_configuration and configuration["header_enabled"] and configuration["header"]:
-            without_header = protected_value[len(configuration["header"]):]
-
         # Strip passthroughs
-        encryptable, positions, chars = self._extract_passthroughs(without_header, alphabet)
+        encryptable, positions, chars = self._extract_passthroughs(protected_value, alphabet)
 
         # Decrypt
         if configuration["engine"] == "ff3":

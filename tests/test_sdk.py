@@ -69,6 +69,14 @@ def test_access_nonreversible_raises():
         c.access(masked)
 
 
+def test_access_two_arg_on_headered_config_raises():
+    c = Cyphera(CONFIG)
+    protected = c.protect("123456789", "ssn")
+    # ssn has header_enabled=True; calling access(value, name) must error.
+    with pytest.raises(ValueError, match="header_enabled=True"):
+        c.access(protected, "ssn")
+
+
 def test_header_collision_raises():
     with pytest.raises(ValueError, match="Header collision"):
         Cyphera({
