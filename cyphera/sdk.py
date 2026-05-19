@@ -145,17 +145,28 @@ class Cyphera:
         else:
             raise ValueError(f"Unknown engine: {engine}")
 
-    def access(self, protected_value: str, configuration_name: str = None) -> str:
-        if configuration_name:
-            configuration = self._get_configuration(configuration_name)
-            if configuration["header_enabled"]:
-                raise ValueError(
-                    f"configuration '{configuration_name}' has header_enabled=True; "
-                    "use access(value) — the header identifies the configuration. "
-                    "The two-arg form is for header_enabled=False configurations only."
-                )
-            return self._access_fpe(protected_value, configuration)
+    def access(self, protected_value: str, configuration_name: str) -> str:
+        """Access (reverse) a protected value using an explicit configuration
+        name. Only valid for ``header_enabled=False`` configurations — the
+        input is treated as raw headerless ciphertext. For header_enabled=True
+        configurations, use :meth:`access_by_header` instead.
+        """
+        configuration = self._get_configuration(configuration_name)
+        if configuration["header_enabled"]:
+            raise ValueError(
+                f"configuration '{configuration_name}' has header_enabled=True; "
+                "use access_by_header(value) — the header identifies the "
+                "configuration. The two-arg form is for header_enabled=False "
+                "configurations only."
+            )
+        return self._access_fpe(protected_value, configuration)
 
+    def access_by_header(self, protected_value: str) -> str:
+        """Access (reverse) a protected value using its embedded Data
+        Protection Header (DPH). Looks up the matching configuration by
+        header prefix, strips it, and decrypts. For ``header_enabled=False``
+        configurations use :meth:`access` with the configuration name.
+        """
         # Header-based lookup — longest headers first
         for header in sorted(self._header_index.keys(), key=len, reverse=True):
             if protected_value.startswith(header):
