@@ -162,27 +162,13 @@ class Cyphera:
         else:
             raise ValueError(f"Unknown engine: {engine}")
 
-    def access(self, protected_value: str, configuration_name: str) -> str:
-        """Access (reverse) a protected value using an explicit configuration
-        name. Only valid for ``header_enabled=False`` configurations — the
-        input is treated as raw headerless ciphertext. For header_enabled=True
-        configurations, use :meth:`access_by_header` instead.
-        """
-        configuration = self._get_configuration(configuration_name)
-        if configuration["header_enabled"]:
-            raise ValueError(
-                f"configuration '{configuration_name}' has header_enabled=True; "
-                "use access_by_header(value) — the header identifies the "
-                "configuration. The two-arg form is for header_enabled=False "
-                "configurations only."
-            )
-        return self._access_fpe(protected_value, configuration)
+    def access(self, protected_value: str) -> str:
+        """Reverse a protected value. The SDK uses the loaded configurations
+        to figure out which one applies — it checks the leading bytes of
+        ``protected_value`` against the registered headers (longest first
+        to avoid prefix collisions), strips the matched header, and decrypts.
 
-    def access_by_header(self, protected_value: str) -> str:
-        """Access (reverse) a protected value using its embedded Data
-        Protection Header (DPH). Looks up the matching configuration by
-        header prefix, strips it, and decrypts. For ``header_enabled=False``
-        configurations use :meth:`access` with the configuration name.
+        For configurations without a header, drop down to :meth:`decrypt`.
         """
         # Header-based lookup — longest headers first
         for header in sorted(self._header_index.keys(), key=len, reverse=True):
@@ -191,7 +177,22 @@ class Cyphera:
                 # Strip the header before delegating; _access_fpe always assumes raw input.
                 return self._access_fpe(protected_value[len(header):], configuration)
 
-        raise ValueError("No matching header found. Use access(value, configuration_name) for headerless values.")
+        raise ValueError("No matching header found. Use decrypt(configuration_name, ciphertext) for headerless values.")
+
+    def decrypt(self, configuration_name: str, ciphertext: str) -> str:
+        """Lower-level drop-down for reversing a headerless ciphertext using
+        a named configuration. The configuration must have
+        ``header_enabled=False`` — for headered configurations, use
+        :meth:`access`, which strips the header itself.
+        """
+        configuration = self._get_configuration(configuration_name)
+        if configuration["header_enabled"]:
+            raise ValueError(
+                f"configuration '{configuration_name}' has header_enabled=True; "
+                "use access(value) — the header identifies the configuration. "
+                "decrypt is for header_enabled=False configurations only."
+            )
+        return self._access_fpe(ciphertext, configuration)
 
     # ── FPE ──
 
@@ -228,7 +229,8 @@ class Cyphera:
         """Internal: decrypt assuming `protected_value` is already header-stripped.
 
         Used by `access(value)` (which strips the header itself) and by
-        `access(value, name)` (only valid for header_enabled=False configs).
+        `decrypt(name, ciphertext)` (only valid for header_enabled=False
+        configs).
         """
         if configuration["engine"] not in ("ff1", "ff3", "ff31"):
             raise ValueError(f"Cannot reverse '{configuration['engine']}' — not reversible")

@@ -21,7 +21,7 @@ def test_protect_access_with_header():
     protected = c.protect("123456789", "ssn")
     assert protected.startswith("T01")
     assert len(protected) > len("123456789")
-    accessed = c.access_by_header(protected)
+    accessed = c.access(protected)
     assert accessed == "123456789"
 
 
@@ -29,7 +29,7 @@ def test_protect_access_with_passthroughs():
     c = Cyphera(CONFIG)
     protected = c.protect("123-45-6789", "ssn")
     assert "-" in protected
-    accessed = c.access_by_header(protected)
+    accessed = c.access(protected)
     assert accessed == "123-45-6789"
 
 
@@ -37,7 +37,7 @@ def test_unheadered_digits_roundtrip():
     c = Cyphera(CONFIG)
     protected = c.protect("123456789", "ssn_digits")
     assert len(protected) == 9
-    accessed = c.access(protected, "ssn_digits")
+    accessed = c.decrypt("ssn_digits", protected)
     assert accessed == "123456789"
 
 
@@ -66,15 +66,16 @@ def test_access_nonreversible_raises():
     c = Cyphera(CONFIG)
     masked = c.protect("123-45-6789", "ssn_mask")
     with pytest.raises(ValueError, match="No matching header"):
-        c.access_by_header(masked)
+        c.access(masked)
 
 
-def test_access_two_arg_on_headered_config_raises():
+def test_decrypt_on_headered_config_raises():
     c = Cyphera(CONFIG)
     protected = c.protect("123456789", "ssn")
-    # ssn has header_enabled=True; calling access(value, name) must error.
+    # ssn has header_enabled=True; decrypt is the lower-level headerless
+    # path, so it must error cleanly. Headered configs go through access().
     with pytest.raises(ValueError, match="header_enabled=True"):
-        c.access(protected, "ssn")
+        c.decrypt("ssn", protected)
 
 
 def test_header_collision_raises():
@@ -99,7 +100,7 @@ def test_header_required_raises():
 def test_unicode_passthroughs():
     c = Cyphera(CONFIG)
     protected = c.protect("José123456", "ssn")
-    accessed = c.access_by_header(protected)
+    accessed = c.access(protected)
     assert accessed == "José123456"
 
 
@@ -111,7 +112,7 @@ def test_key_source_env(monkeypatch):
     })
     p = c.protect("123456789", "ssn")
     assert p.startswith("T01")
-    assert c.access_by_header(p) == "123456789"
+    assert c.access(p) == "123456789"
 
 
 def test_key_source_env_base64(monkeypatch):
@@ -124,7 +125,7 @@ def test_key_source_env_base64(monkeypatch):
     })
     p = c.protect("123456789", "ssn")
     assert p.startswith("T01")
-    assert c.access_by_header(p) == "123456789"
+    assert c.access(p) == "123456789"
 
 
 def test_key_source_env_missing_raises():
@@ -144,7 +145,7 @@ def test_key_source_file(tmp_path):
     })
     p = c.protect("123456789", "ssn")
     assert p.startswith("T01")
-    assert c.access_by_header(p) == "123456789"
+    assert c.access(p) == "123456789"
 
 
 def test_key_source_cloud_without_keychain_raises():
