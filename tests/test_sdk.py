@@ -37,7 +37,7 @@ def test_unheadered_digits_roundtrip():
     c = Cyphera(CONFIG)
     protected = c.protect("123456789", "ssn_digits")
     assert len(protected) == 9
-    accessed = c.decrypt("ssn_digits", protected)
+    accessed = c.access(protected, "ssn_digits")
     assert accessed == "123456789"
 
 
@@ -69,13 +69,17 @@ def test_access_nonreversible_raises():
         c.access(masked)
 
 
-def test_decrypt_on_headered_config_raises():
+def test_access_with_config_unknown_raises():
     c = Cyphera(CONFIG)
-    protected = c.protect("123456789", "ssn")
-    # ssn has header_enabled=True; decrypt is the lower-level headerless
-    # path, so it must error cleanly. Headered configs go through access().
-    with pytest.raises(ValueError, match="header_enabled=True"):
-        c.decrypt("ssn", protected)
+    with pytest.raises(ValueError):
+        c.access("abc", "nope")
+
+
+def test_access_with_config_irreversible_raises():
+    c = Cyphera(CONFIG)
+    # Escape hatch rejects irreversible engines (mask/hash).
+    with pytest.raises(ValueError, match="Cannot reverse"):
+        c.access("anything", "ssn_mask")
 
 
 def test_header_collision_raises():

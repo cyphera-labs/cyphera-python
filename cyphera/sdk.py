@@ -162,37 +162,35 @@ class Cyphera:
         else:
             raise ValueError(f"Unknown engine: {engine}")
 
-    def access(self, protected_value: str) -> str:
-        """Reverse a protected value. The SDK uses the loaded configurations
-        to figure out which one applies — it checks the leading bytes of
-        ``protected_value`` against the registered headers (longest first
-        to avoid prefix collisions), strips the matched header, and decrypts.
+    def access(self, value: str, configuration_name: str | None = None) -> str:
+        """Reverse a protected value.
 
-        For configurations without a header, drop down to :meth:`decrypt`.
+        The primary, one-argument form ``access(value)`` is header-driven:
+        the SDK checks the leading bytes of ``value`` against the
+        registered headers (longest first to avoid prefix collisions),
+        strips the matched header, and decrypts.
+
+        The two-argument form ``access(value, configuration_name)`` is an
+        escape hatch for unique situations where the protected value has
+        no header (mainframe formats, fixed-width legacy systems, etc.).
+        The caller names the configuration explicitly; ``value`` is
+        decrypted as raw headerless ciphertext. There is no
+        ``header_enabled`` guard — the caller asserts the input has no
+        header.
         """
-        # Header-based lookup — longest headers first
+        if configuration_name is not None:
+            # Escape-hatch form — caller names the configuration explicitly.
+            configuration = self._get_configuration(configuration_name)
+            return self._access_fpe(value, configuration)
+
+        # Primary form — header-based lookup, longest headers first.
         for header in sorted(self._header_index.keys(), key=len, reverse=True):
-            if protected_value.startswith(header):
+            if value.startswith(header):
                 configuration = self._get_configuration(self._header_index[header])
                 # Strip the header before delegating; _access_fpe always assumes raw input.
-                return self._access_fpe(protected_value[len(header):], configuration)
+                return self._access_fpe(value[len(header):], configuration)
 
-        raise ValueError("No matching header found. Use decrypt(configuration_name, ciphertext) for headerless values.")
-
-    def decrypt(self, configuration_name: str, ciphertext: str) -> str:
-        """Lower-level drop-down for reversing a headerless ciphertext using
-        a named configuration. The configuration must have
-        ``header_enabled=False`` — for headered configurations, use
-        :meth:`access`, which strips the header itself.
-        """
-        configuration = self._get_configuration(configuration_name)
-        if configuration["header_enabled"]:
-            raise ValueError(
-                f"configuration '{configuration_name}' has header_enabled=True; "
-                "use access(value) — the header identifies the configuration. "
-                "decrypt is for header_enabled=False configurations only."
-            )
-        return self._access_fpe(ciphertext, configuration)
+        raise ValueError("No matching header found")
 
     # ── FPE ──
 
@@ -228,9 +226,9 @@ class Cyphera:
     def _access_fpe(self, protected_value: str, configuration: dict) -> str:
         """Internal: decrypt assuming `protected_value` is already header-stripped.
 
-        Used by `access(value)` (which strips the header itself) and by
-        `decrypt(name, ciphertext)` (only valid for header_enabled=False
-        configs).
+        Used by ``access(value)`` (which strips the header itself) and by
+        the ``access(value, name)`` escape hatch (where the caller asserts
+        the input has no header).
         """
         if configuration["engine"] not in ("ff1", "ff3", "ff31"):
             raise ValueError(f"Cannot reverse '{configuration['engine']}' — not reversible")
