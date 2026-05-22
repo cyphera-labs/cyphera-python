@@ -2,10 +2,27 @@
 
 import json
 import os
+import sys
 import hashlib
 import hmac
 from .ff1 import FF1
-from .ff3 import FF3
+from .ff3 import FF3, FF31
+
+_ff3_warned = False
+
+
+def _warn_ff3_deprecated() -> None:
+    """Emit the FF3 deprecation warning to stderr, once per process. Original
+    FF3 is cryptographically weak; configurations should use the 'ff31' engine.
+    """
+    global _ff3_warned
+    if not _ff3_warned:
+        _ff3_warned = True
+        print(
+            "WARNING: engine 'ff3' is deprecated and cryptographically weak "
+            "— migrate to 'ff31' (FF3-1).",
+            file=sys.stderr,
+        )
 
 ALPHABETS = {
     "digits": "0123456789",
@@ -136,8 +153,8 @@ class Cyphera:
         configuration = self._get_configuration(configuration_name)
         engine = configuration["engine"]
 
-        if engine in ("ff1", "ff3"):
-            return self._protect_fpe(value, configuration, engine == "ff3")
+        if engine in ("ff1", "ff3", "ff31"):
+            return self._protect_fpe(value, configuration)
         elif engine == "mask":
             return self._protect_mask(value, configuration)
         elif engine == "hash":
@@ -178,7 +195,7 @@ class Cyphera:
 
     # ── FPE ──
 
-    def _protect_fpe(self, value: str, configuration: dict, is_ff3: bool) -> str:
+    def _protect_fpe(self, value: str, configuration: dict) -> str:
         key = self._resolve_key(configuration["key_ref"])
         alphabet = configuration["alphabet"]
 
@@ -189,8 +206,12 @@ class Cyphera:
             raise ValueError("No encryptable characters in input")
 
         # Encrypt
-        if is_ff3:
+        engine = configuration["engine"]
+        if engine == "ff3":
+            _warn_ff3_deprecated()
             cipher = FF3(key, b"\x00" * 8, alphabet)
+        elif engine == "ff31":
+            cipher = FF31(key, b"\x00" * 7, alphabet)
         else:
             cipher = FF1(key, b"", alphabet)
         encrypted = cipher.encrypt(encryptable)
@@ -209,7 +230,7 @@ class Cyphera:
         Used by `access(value)` (which strips the header itself) and by
         `access(value, name)` (only valid for header_enabled=False configs).
         """
-        if configuration["engine"] not in ("ff1", "ff3"):
+        if configuration["engine"] not in ("ff1", "ff3", "ff31"):
             raise ValueError(f"Cannot reverse '{configuration['engine']}' — not reversible")
 
         key = self._resolve_key(configuration["key_ref"])
@@ -219,8 +240,12 @@ class Cyphera:
         encryptable, positions, chars = self._extract_passthroughs(protected_value, alphabet)
 
         # Decrypt
-        if configuration["engine"] == "ff3":
+        engine = configuration["engine"]
+        if engine == "ff3":
+            _warn_ff3_deprecated()
             cipher = FF3(key, b"\x00" * 8, alphabet)
+        elif engine == "ff31":
+            cipher = FF31(key, b"\x00" * 7, alphabet)
         else:
             cipher = FF1(key, b"", alphabet)
         decrypted = cipher.decrypt(encryptable)

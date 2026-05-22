@@ -1,4 +1,9 @@
-"""FF3-1 Format-Preserving Encryption (NIST SP 800-38G Rev 1)."""
+"""FF3 and FF3-1 Format-Preserving Encryption.
+
+FF3 (NIST SP 800-38G) is the original algorithm — cryptographically weak and
+deprecated. FF3-1 (NIST SP 800-38G Rev 1) uses a 56-bit tweak and is the
+recommended algorithm. Use the ``FF31`` class for FF3-1.
+"""
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
@@ -127,3 +132,33 @@ class FF3:
                 B = list(reversed(new))
 
         return A + B
+
+
+def _expand_ff31_tweak(t: bytes) -> bytes:
+    """Expand the 56-bit FF3-1 tweak into the 64-bit tweak the FF3 round
+    function consumes (NIST SP 800-38G Rev 1): bytes[0:4] = T_L, [4:8] = T_R."""
+    return bytes([
+        t[0], t[1], t[2], t[3] & 0xF0,
+        t[4], t[5], t[6], (t[3] & 0x0F) << 4,
+    ])
+
+
+class FF31:
+    """FF3-1 Format-Preserving Encryption (NIST SP 800-38G Rev 1).
+
+    FF3-1 is FF3 with a 56-bit (7-byte) tweak. The tweak is expanded into the
+    64-bit form the FF3 round function consumes; the algorithm is identical FF3.
+    """
+
+    def __init__(self, key: bytes, tweak: bytes, alphabet: str = ALPHANUMERIC):
+        if len(tweak) != 7:
+            raise ValueError(
+                f"FF3-1 tweak must be exactly 7 bytes (56 bits), got {len(tweak)}"
+            )
+        self._ff3 = FF3(key, _expand_ff31_tweak(tweak), alphabet)
+
+    def encrypt(self, plaintext: str) -> str:
+        return self._ff3.encrypt(plaintext)
+
+    def decrypt(self, ciphertext: str) -> str:
+        return self._ff3.decrypt(ciphertext)
