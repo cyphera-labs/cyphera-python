@@ -25,14 +25,36 @@ class FF3:
         self._alphabet = alphabet
         self._radix = len(alphabet)
         self._char_to_int = {c: i for i, c in enumerate(alphabet)}
+        # NIST FF3 maximum length: 2 * floor(log_radix(2^96)), computed with
+        # exact integer arithmetic (no floating point).
+        limit = 1 << 96
+        k = 0
+        while self._radix ** (k + 1) <= limit:
+            k += 1
+        self._max_len = 2 * k
+
+    def _check_length(self, n: int) -> None:
+        # NIST SP 800-38G: length >= 2, radix^length >= 1,000,000, and for
+        # FF3/FF3-1 length <= 2*floor(log_radix(2^96)).
+        if n < 2 or self._radix ** n < 1_000_000:
+            raise ValueError(
+                "input too short (NIST minimum: length >= 2 and "
+                "radix^length >= 1,000,000)"
+            )
+        if n > self._max_len:
+            raise ValueError(
+                f"input too long (FF3 maximum for this radix is {self._max_len})"
+            )
 
     def encrypt(self, plaintext: str) -> str:
         digits = self._to_digits(plaintext)
+        self._check_length(len(digits))
         result = self._ff3_encrypt(digits)
         return self._from_digits(result)
 
     def decrypt(self, ciphertext: str) -> str:
         digits = self._to_digits(ciphertext)
+        self._check_length(len(digits))
         result = self._ff3_decrypt(digits)
         return self._from_digits(result)
 

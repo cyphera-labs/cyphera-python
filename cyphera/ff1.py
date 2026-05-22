@@ -1,7 +1,6 @@
 """FF1 Format-Preserving Encryption (NIST SP 800-38G)."""
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-import math
 
 DIGITS = "0123456789"
 ALPHANUMERIC = "0123456789abcdefghijklmnopqrstuvwxyz"
@@ -73,8 +72,21 @@ class FF1:
             num //= self._radix
         return result
 
+    def _check_length(self, n: int) -> None:
+        # NIST SP 800-38G: length >= 2 and radix^length >= 1,000,000.
+        if n < 2 or self._radix ** n < 1_000_000:
+            raise ValueError(
+                "input too short (NIST minimum: length >= 2 and "
+                "radix^length >= 1,000,000)"
+            )
+
     def _compute_b(self, v: int) -> int:
-        return math.ceil(math.ceil(v * math.log2(self._radix)) / 8)
+        # NIST SP 800-38G: b = ceil(ceil(v*log2(radix))/8), computed with exact
+        # integer arithmetic. ceil(v*log2(radix)) is the bit length of
+        # radix^v - 1. Floating-point log2 is forbidden here — rounding errors
+        # would corrupt the ciphertext.
+        bits = (self._radix ** v - 1).bit_length()
+        return (bits + 7) // 8
 
     def _build_p(self, u: int, n: int, t: int) -> bytes:
         return bytes(
@@ -96,6 +108,7 @@ class FF1:
 
     def _ff1_encrypt(self, pt: list[int], T: bytes) -> list[int]:
         n = len(pt)
+        self._check_length(n)
         u, v = n // 2, n - n // 2
         A, B = pt[:u], pt[u:]
 
@@ -120,6 +133,7 @@ class FF1:
 
     def _ff1_decrypt(self, ct: list[int], T: bytes) -> list[int]:
         n = len(ct)
+        self._check_length(n)
         u, v = n // 2, n - n // 2
         A, B = ct[:u], ct[u:]
 
