@@ -178,3 +178,80 @@ def test_key_source_env_matches_inline(monkeypatch):
     p1 = c_inline.protect("123456789", "ssn")
     p2 = c_env.protect("123456789", "ssn")
     assert p1 == p2, "env source should produce identical output to inline material"
+
+
+# ── FF3 / FF3-1 strict tweak (no silent zero-fill) ──────────────────────────
+
+_KEY_ONLY = {"test-key": {"material": "2B7E151628AED2A6ABF7158809CF4F3C"}}
+
+
+def test_protect_ff3_missing_tweak_errors():
+    c = Cyphera({
+        "configurations": {
+            "ff3_d": {"engine": "ff3", "alphabet": "digits", "key_ref": "test-key", "header_enabled": False},
+        },
+        "keys": _KEY_ONLY,
+    })
+    with pytest.raises(ValueError) as exc:
+        c.protect("0123456789", "ff3_d")
+    assert str(exc.value) == "configuration 'ff3_d' is missing required 'tweak' (FF3 needs 8 bytes)"
+
+
+def test_protect_ff31_missing_tweak_errors():
+    c = Cyphera({
+        "configurations": {
+            "ff31_d": {"engine": "ff31", "alphabet": "digits", "key_ref": "test-key", "header_enabled": False},
+        },
+        "keys": _KEY_ONLY,
+    })
+    with pytest.raises(ValueError) as exc:
+        c.protect("0123456789", "ff31_d")
+    assert str(exc.value) == "configuration 'ff31_d' is missing required 'tweak' (FF3-1 needs 7 bytes)"
+
+
+def test_protect_ff1_missing_tweak_ok():
+    """FF1 tweak stays optional per NIST SP 800-38G."""
+    c = Cyphera({
+        "configurations": {
+            "ff1_d": {"engine": "ff1", "alphabet": "digits", "key_ref": "test-key", "header_enabled": False},
+        },
+        "keys": _KEY_ONLY,
+    })
+    # No tweak supplied — must not raise.
+    assert c.protect("0123456789", "ff1_d") != "0123456789"
+
+
+def test_protect_ff3_with_tweak_roundtrips():
+    c = Cyphera({
+        "configurations": {
+            "ff3_d": {
+                "engine": "ff3",
+                "alphabet": "digits",
+                "key_ref": "test-key",
+                "tweak": "D8E7920AFA330A73",
+                "header_enabled": False,
+            },
+        },
+        "keys": _KEY_ONLY,
+    })
+    protected = c.protect("0123456789", "ff3_d")
+    assert protected != "0123456789"
+    assert c.access(protected, "ff3_d") == "0123456789"
+
+
+def test_protect_ff31_with_tweak_roundtrips():
+    c = Cyphera({
+        "configurations": {
+            "ff31_d": {
+                "engine": "ff31",
+                "alphabet": "digits",
+                "key_ref": "test-key",
+                "tweak": "D8E7920AFA330A",
+                "header_enabled": False,
+            },
+        },
+        "keys": _KEY_ONLY,
+    })
+    protected = c.protect("0123456789", "ff31_d")
+    assert protected != "0123456789"
+    assert c.access(protected, "ff31_d") == "0123456789"

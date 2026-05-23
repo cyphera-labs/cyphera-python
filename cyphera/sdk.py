@@ -123,6 +123,7 @@ class Cyphera:
                 "engine": cfg.get("engine", "ff1"),
                 "alphabet": ALPHABETS.get(cfg.get("alphabet"), cfg.get("alphabet") or ALPHABETS["alphanumeric"]),
                 "key_ref": cfg.get("key_ref"),
+                "tweak": cfg.get("tweak"),
                 "header": header,
                 "header_enabled": header_enabled,
                 "header_length": cfg.get("header_length", 3),
@@ -154,7 +155,7 @@ class Cyphera:
         engine = configuration["engine"]
 
         if engine in ("ff1", "ff3", "ff31"):
-            return self._protect_fpe(value, configuration)
+            return self._protect_fpe(value, configuration_name, configuration)
         elif engine == "mask":
             return self._protect_mask(value, configuration)
         elif engine == "hash":
@@ -186,20 +187,49 @@ class Cyphera:
                 raise ValueError(f"cannot reverse '{configuration_name}' — mask is irreversible")
             if engine == "hash":
                 raise ValueError(f"cannot reverse '{configuration_name}' — hash is irreversible")
-            return self._access_fpe(value, configuration)
+            return self._access_fpe(value, configuration_name, configuration)
 
         # Primary form — header-based lookup, longest headers first.
         for header in sorted(self._header_index.keys(), key=len, reverse=True):
             if value.startswith(header):
-                configuration = self._get_configuration(self._header_index[header])
+                name = self._header_index[header]
+                configuration = self._get_configuration(name)
                 # Strip the header before delegating; _access_fpe always assumes raw input.
-                return self._access_fpe(value[len(header):], configuration)
+                return self._access_fpe(value[len(header):], name, configuration)
 
         raise ValueError("no matching header found")
 
     # ── FPE ──
 
-    def _protect_fpe(self, value: str, configuration: dict) -> str:
+    @staticmethod
+    def _resolve_tweak(name: str, configuration: dict) -> bytes:
+        """Validate + decode the configuration-level tweak.
+
+        FF3 requires exactly 8 bytes and FF3-1 requires exactly 7. A missing
+        tweak for either is a hard error with the canonical spec message
+        (no silent zero-fill — see cyphera-spec/spec/sdk.md). FF1 accepts an
+        empty or arbitrary-length tweak per NIST SP 800-38G.
+        """
+        engine = configuration["engine"]
+        tweak_hex = configuration.get("tweak")
+        if engine == "ff3":
+            if not tweak_hex:
+                raise ValueError(
+                    f"configuration '{name}' is missing required 'tweak' (FF3 needs 8 bytes)"
+                )
+            return bytes.fromhex(tweak_hex)
+        if engine == "ff31":
+            if not tweak_hex:
+                raise ValueError(
+                    f"configuration '{name}' is missing required 'tweak' (FF3-1 needs 7 bytes)"
+                )
+            return bytes.fromhex(tweak_hex)
+        # FF1 — optional, default empty.
+        if not tweak_hex:
+            return b""
+        return bytes.fromhex(tweak_hex)
+
+    def _protect_fpe(self, value: str, name: str, configuration: dict) -> str:
         key = self._resolve_key(configuration["key_ref"])
         alphabet = configuration["alphabet"]
 
@@ -209,15 +239,17 @@ class Cyphera:
         if not encryptable:
             raise ValueError("no encryptable characters in input")
 
+        tweak = self._resolve_tweak(name, configuration)
+
         # Encrypt
         engine = configuration["engine"]
         if engine == "ff3":
             _warn_ff3_deprecated()
-            cipher = FF3(key, b"\x00" * 8, alphabet)
+            cipher = FF3(key, tweak, alphabet)
         elif engine == "ff31":
-            cipher = FF31(key, b"\x00" * 7, alphabet)
+            cipher = FF31(key, tweak, alphabet)
         else:
-            cipher = FF1(key, b"", alphabet)
+            cipher = FF1(key, tweak, alphabet)
         encrypted = cipher.encrypt(encryptable)
 
         # Reinsert passthroughs
@@ -228,7 +260,7 @@ class Cyphera:
             return configuration["header"] + result
         return result
 
-    def _access_fpe(self, protected_value: str, configuration: dict) -> str:
+    def _access_fpe(self, protected_value: str, name: str, configuration: dict) -> str:
         """Internal: decrypt assuming `protected_value` is already header-stripped.
 
         Used by ``access(value)`` (which strips the header itself) and by
@@ -244,15 +276,17 @@ class Cyphera:
         # Strip passthroughs
         encryptable, positions, chars = self._extract_passthroughs(protected_value, alphabet)
 
+        tweak = self._resolve_tweak(name, configuration)
+
         # Decrypt
         engine = configuration["engine"]
         if engine == "ff3":
             _warn_ff3_deprecated()
-            cipher = FF3(key, b"\x00" * 8, alphabet)
+            cipher = FF3(key, tweak, alphabet)
         elif engine == "ff31":
-            cipher = FF31(key, b"\x00" * 7, alphabet)
+            cipher = FF31(key, tweak, alphabet)
         else:
-            cipher = FF1(key, b"", alphabet)
+            cipher = FF1(key, tweak, alphabet)
         decrypted = cipher.decrypt(encryptable)
 
         # Reinsert passthroughs
