@@ -1,6 +1,6 @@
 [project]
 name = "cyphera"
-version = "0.0.1a8"
+version = "0.0.1a9"
 description = "Data protection SDK — format-preserving encryption (FF1/FF3), AES-GCM, data masking, and hashing."
 readme = "README.md"
 license = "Apache-2.0"
