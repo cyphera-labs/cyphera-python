@@ -9,7 +9,7 @@ ALPHANUMERIC = "0123456789abcdefghijklmnopqrstuvwxyz"
 class FF1:
     def __init__(self, key: bytes, tweak: bytes, alphabet: str = ALPHANUMERIC):
         if len(key) not in (16, 24, 32):
-            raise ValueError(f"Key must be 16, 24, or 32 bytes, got {len(key)}")
+            raise ValueError(f"invalid key length: {len(key)} (expected 16, 24, or 32)")
         if len(alphabet) < 2:
             raise ValueError("Alphabet must have >= 2 characters")
         self._key = key
@@ -29,7 +29,13 @@ class FF1:
         return self._from_digits(result)
 
     def _to_digits(self, s: str) -> list[int]:
-        return [self._char_to_int[c] for c in s]
+        digits = []
+        for pos, c in enumerate(s):
+            idx = self._char_to_int.get(c)
+            if idx is None:
+                raise ValueError(f"invalid char '{c}' at position {pos}")
+            digits.append(idx)
+        return digits
 
     def _from_digits(self, d: list[int]) -> str:
         return "".join(self._alphabet[i] for i in d)

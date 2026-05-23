@@ -112,11 +112,11 @@ class Cyphera:
             header = cfg.get("header")
 
             if header_enabled and not header:
-                raise ValueError(f"Configuration '{name}' has header_enabled=true but no header specified")
+                raise ValueError("configuration error: header must be specified")
 
             if header_enabled and header:
                 if header in self._header_index:
-                    raise ValueError(f"Header collision: '{header}' used by both '{self._header_index[header]}' and '{name}'")
+                    raise ValueError("configuration error: header collision")
                 self._header_index[header] = name
 
             self._configurations[name] = {
@@ -160,7 +160,7 @@ class Cyphera:
         elif engine == "hash":
             return self._protect_hash(value, configuration)
         else:
-            raise ValueError(f"Unknown engine: {engine}")
+            raise ValueError(f"unknown engine: {engine}")
 
     def access(self, value: str, configuration_name: str | None = None) -> str:
         """Reverse a protected value.
@@ -181,6 +181,11 @@ class Cyphera:
         if configuration_name is not None:
             # Escape-hatch form — caller names the configuration explicitly.
             configuration = self._get_configuration(configuration_name)
+            engine = configuration["engine"]
+            if engine == "mask":
+                raise ValueError(f"cannot reverse '{configuration_name}' — mask is irreversible")
+            if engine == "hash":
+                raise ValueError(f"cannot reverse '{configuration_name}' — hash is irreversible")
             return self._access_fpe(value, configuration)
 
         # Primary form — header-based lookup, longest headers first.
@@ -190,7 +195,7 @@ class Cyphera:
                 # Strip the header before delegating; _access_fpe always assumes raw input.
                 return self._access_fpe(value[len(header):], configuration)
 
-        raise ValueError("No matching header found")
+        raise ValueError("no matching header found")
 
     # ── FPE ──
 
@@ -202,7 +207,7 @@ class Cyphera:
         encryptable, positions, chars = self._extract_passthroughs(value, alphabet)
 
         if not encryptable:
-            raise ValueError("No encryptable characters in input")
+            raise ValueError("no encryptable characters in input")
 
         # Encrypt
         engine = configuration["engine"]
@@ -231,7 +236,7 @@ class Cyphera:
         the input has no header).
         """
         if configuration["engine"] not in ("ff1", "ff3", "ff31"):
-            raise ValueError(f"Cannot reverse '{configuration['engine']}' — not reversible")
+            raise ValueError(f"unknown engine: {configuration['engine']}")
 
         key = self._resolve_key(configuration["key_ref"])
         alphabet = configuration["alphabet"]
@@ -258,7 +263,7 @@ class Cyphera:
     def _protect_mask(self, value: str, configuration: dict) -> str:
         pattern = configuration["pattern"]
         if not pattern:
-            raise ValueError("Mask configuration requires 'pattern'")
+            raise ValueError("mask pattern required")
         length = len(value)
         if pattern in ("last4", "last_4"):
             return "*" * max(0, length - 4) + value[-4:]
@@ -293,15 +298,15 @@ class Cyphera:
     def _get_configuration(self, name: str) -> dict:
         configuration = self._configurations.get(name)
         if not configuration:
-            raise ValueError(f"Unknown configuration: {name}")
+            raise ValueError(f"configuration not found: {name}")
         return configuration
 
     def _resolve_key(self, key_ref: str) -> bytes:
         if not key_ref:
-            raise ValueError("No key_ref in configuration")
+            raise ValueError("key error: no key_ref in configuration")
         key = self._keys.get(key_ref)
         if not key:
-            raise ValueError(f"Unknown key: {key_ref}")
+            raise ValueError(f"key error: key '{key_ref}' not found")
         return key
 
     @staticmethod

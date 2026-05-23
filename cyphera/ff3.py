@@ -14,9 +14,9 @@ ALPHANUMERIC = "0123456789abcdefghijklmnopqrstuvwxyz"
 class FF3:
     def __init__(self, key: bytes, tweak: bytes, alphabet: str = ALPHANUMERIC):
         if len(key) not in (16, 24, 32):
-            raise ValueError(f"Key must be 16, 24, or 32 bytes, got {len(key)}")
+            raise ValueError(f"invalid key length: {len(key)} (expected 16, 24, or 32)")
         if len(tweak) != 8:
-            raise ValueError(f"Tweak must be exactly 8 bytes, got {len(tweak)}")
+            raise ValueError(f"invalid tweak length: {len(tweak)} (expected 8)")
         if len(alphabet) < 2:
             raise ValueError("Alphabet must have >= 2 characters")
         # FF3 reverses the key
@@ -59,7 +59,13 @@ class FF3:
         return self._from_digits(result)
 
     def _to_digits(self, s: str) -> list[int]:
-        return [self._char_to_int[c] for c in s]
+        digits = []
+        for pos, c in enumerate(s):
+            idx = self._char_to_int.get(c)
+            if idx is None:
+                raise ValueError(f"invalid char '{c}' at position {pos}")
+            digits.append(idx)
+        return digits
 
     def _from_digits(self, d: list[int]) -> str:
         return "".join(self._alphabet[i] for i in d)
@@ -174,9 +180,7 @@ class FF31:
 
     def __init__(self, key: bytes, tweak: bytes, alphabet: str = ALPHANUMERIC):
         if len(tweak) != 7:
-            raise ValueError(
-                f"FF3-1 tweak must be exactly 7 bytes (56 bits), got {len(tweak)}"
-            )
+            raise ValueError(f"invalid tweak length: {len(tweak)} (expected 7)")
         self._ff3 = FF3(key, _expand_ff31_tweak(tweak), alphabet)
 
     def encrypt(self, plaintext: str) -> str:

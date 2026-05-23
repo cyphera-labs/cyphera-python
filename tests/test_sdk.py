@@ -65,7 +65,7 @@ def test_hash_deterministic():
 def test_access_nonreversible_raises():
     c = Cyphera(CONFIG)
     masked = c.protect("123-45-6789", "ssn_mask")
-    with pytest.raises(ValueError, match="No matching header"):
+    with pytest.raises(ValueError, match="no matching header found"):
         c.access(masked)
 
 
@@ -78,12 +78,12 @@ def test_access_with_config_unknown_raises():
 def test_access_with_config_irreversible_raises():
     c = Cyphera(CONFIG)
     # Escape hatch rejects irreversible engines (mask/hash).
-    with pytest.raises(ValueError, match="Cannot reverse"):
+    with pytest.raises(ValueError, match="mask is irreversible"):
         c.access("anything", "ssn_mask")
 
 
 def test_header_collision_raises():
-    with pytest.raises(ValueError, match="Header collision"):
+    with pytest.raises(ValueError, match="configuration error: header collision"):
         Cyphera({
             "configurations": {
                 "a": {"engine": "ff1", "key_ref": "k", "header": "ABC"},
@@ -94,7 +94,7 @@ def test_header_collision_raises():
 
 
 def test_header_required_raises():
-    with pytest.raises(ValueError, match="no header specified"):
+    with pytest.raises(ValueError, match="configuration error: header must be specified"):
         Cyphera({
             "configurations": {"a": {"engine": "ff1", "key_ref": "k"}},
             "keys": {"k": {"material": "2B7E151628AED2A6ABF7158809CF4F3C"}},
